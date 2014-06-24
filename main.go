@@ -1,11 +1,11 @@
 package main
 
 import (
-    "fmt"
+	"fmt"
 	"io/ioutil"
-    "log"
-    "os"
-    "strings"
+	"log"
+	"os"
+	"strings"
 	"unicode/utf8"
 )
 
