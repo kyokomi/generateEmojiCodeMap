@@ -5,62 +5,115 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strings"
-	"unicode/utf8"
+	"encoding/json"
+	"text/template"
+	"bytes"
+	"go/format"
+	"flag"
+	"net/http"
 )
+
+const gemojiDBJsonURL = "https://raw.githubusercontent.com/github/gemoji/master/db/emoji.json"
+
+type GemojiEmoji struct {
+	Aliases     []string `json:"aliases"`
+	Description string   `json:"description"`
+	Emoji       string   `json:"emoji"`
+	Tags        []string `json:"tags"`
+}
+
+type TemplateData struct {
+	PkgName string
+	CodeMap map[string]string
+}
+
+const templateMapCode = `
+package {{.PkgName}}
+
+// NOTE: THIS FILE WAS PRODUCED BY THE
+// EMOJICODEMAP CODE GENERATION TOOL (github.com/kyokomi/generateEmojiCodeMap)
+// DO NOT EDIT
+
+// Mapping from character to concrete escape code.
+var emojiCodeMap = map[string]string{
+	{{range $key, $val := .CodeMap}}":{{$key}}:": {{$val}},
+{{end}}
+}
+`
+
+var pkgName string
+var fileName string
+
+func init() {
+	log.SetFlags(log.Llongfile)
+
+	flag.StringVar(&pkgName, "pkg", "main", "output package")
+	flag.StringVar(&fileName, "o", "emoji_codemap.go", "output file")
+	flag.Parse()
+}
 
 func main() {
 
-	generate()
-}
-
-func generate() {
-	emojiDir, err := ioutil.ReadDir("gemoji/images/emoji")
+	codeMap, err := generateJson(pkgName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
 
-	currentPwd, err := os.Getwd()
+	os.Remove(fileName)
+
+	file, err := os.Create(fileName)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(codeMap); err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func generateJson(pkgName string) ([]byte, error) {
+
+	// Read Emoji file
+
+	res, err := http.Get(gemojiDBJsonURL)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	emojiFile, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var gs []GemojiEmoji
+	if err := json.Unmarshal(emojiFile, &gs); err != nil {
+		return nil, err
 	}
 
 	emojiCodeMap := make(map[string]string)
-
-	for _, emojiFileInfo := range emojiDir {
-		emojiFilePath := currentPwd + "/gemoji/images/emoji/" + emojiFileInfo.Name()
-		linkStr, _ := os.Readlink(emojiFilePath)
-		if err != nil {
-			log.Println(err)
+	for _, gemoji := range gs {
+		for _, a := range gemoji.Aliases {
+			emojiCodeMap[a] = fmt.Sprintf("%+q", gemoji.Emoji)
 		}
-
-		checkCode := strings.Replace(linkStr, `unicode/`, ``, 1)
-		checkCode = strings.Replace(checkCode, `.png`, ``, 1)
-		count := utf8.RuneCountInString(checkCode)
-		if count == 0 {
-			continue
-		}
-
-		key := strings.Replace(emojiFileInfo.Name(), `.png`, ``, 1)
-		code := strings.Replace(linkStr, `.png`, ``, 1)
-		switch count {
-		case 4: // f000
-			code = strings.Replace(code, `unicode/`, `\U0000`, 1)
-		case 5: // 1f000
-			code = strings.Replace(code, `unicode/`, `\U000`, 1)
-		case 9: // f000-f000
-			code = strings.Replace(code, `unicode/`, `\U0000`, 1)
-			code = strings.Replace(code, `-`, `\U0000`, 1)
-		case 11: // 1f000-1f000
-			code = strings.Replace(code, `unicode/`, `\U000`, 1)
-			code = strings.Replace(code, `-`, `\U000`, 1)
-		default:
-			continue;
-		}
-		emojiCodeMap[key] = code
 	}
 
-	for key, value := range emojiCodeMap {
-		fmt.Println(`":` + key + `:": "` + value + `",`)
+	// Template GenerateSource
+
+	var buf bytes.Buffer
+	t := template.Must(template.New("template").Parse(templateMapCode))
+	if err := t.Execute(&buf, TemplateData{pkgName, emojiCodeMap}); err != nil {
+		return nil, err
 	}
+
+	// gofmt
+
+	bts, err := format.Source(buf.Bytes())
+	if err != nil {
+		fmt.Println(string(buf.Bytes()))
+		return nil, fmt.Errorf("gofmt: %s", err)
+	}
+
+	return bts, nil
 }
