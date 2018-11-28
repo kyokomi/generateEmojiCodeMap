@@ -1,7 +1,7 @@
 generateEmojiCodeMap
 ====================
 
-golangのemojiパッケージのCodeMap生成用ツール。
+[github.com/kyokomi/emoji](https://github.com/kyokomi/emoji) codemap generation tool.
 
 
 ## Install
