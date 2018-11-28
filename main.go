@@ -1,25 +1,30 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"flag"
 	"fmt"
+	"go/format"
 	"io/ioutil"
 	"log"
-	"os"
-	"encoding/json"
-	"text/template"
-	"bytes"
-	"go/format"
-	"flag"
 	"net/http"
+	"os"
+	"strings"
+	"text/template"
 )
 
-const gemojiDBJsonURL = "https://raw.githubusercontent.com/github/gemoji/master/db/emoji.json"
+const gemojiDBJsonURL = "https://raw.githubusercontent.com/CodeFreezr/emojo/master/db/v5/emoji-v5.json"
 
 type GemojiEmoji struct {
-	Aliases     []string `json:"aliases"`
-	Description string   `json:"description"`
-	Emoji       string   `json:"emoji"`
-	Tags        []string `json:"tags"`
+	No          int    `json:"No"`
+	Emoji       string `json:"Emoji"`
+	Category    string `json:"Category"`
+	SubCategory string `json:"SubCategory"`
+	Unicode     string `json:"Unicode"`
+	Name        string `json:"Name"`
+	Tags        string `json:"Tags"`
+	Shortcode   string `json:"Shortcode"`
 }
 
 type TemplateData struct {
@@ -94,9 +99,7 @@ func generateJson(pkgName string) ([]byte, error) {
 
 	emojiCodeMap := make(map[string]string)
 	for _, gemoji := range gs {
-		for _, a := range gemoji.Aliases {
-			emojiCodeMap[a] = fmt.Sprintf("%+q", gemoji.Emoji)
-		}
+		emojiCodeMap[strings.Replace(gemoji.Shortcode, ":", "", 2)] = fmt.Sprintf("%+q", gemoji.Emoji)
 	}
 
 	// Template GenerateSource
